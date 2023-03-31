@@ -4,8 +4,9 @@ import numpy.random as rnd
 from scipy.stats import multivariate_normal as mvn
 import math
 from scipy.linalg import sqrtm
+import random 
 
-
+random.seed(10)
 
 
 # Task 1
@@ -39,9 +40,15 @@ print(A)
 
 Ax = np.matmul(A, x)
 
+#noise_level = 1
+#noise_level = 0.001
+#noise_level = 0.03
+noise_level = 0.6
+
+
 Gamma = np.zeros((n_d, n_d))
 for i in range(n_d):
-    Gamma[i, i] = 0.03 * log_q[i]
+    Gamma[i, i] = noise_level * log_q[i]
 
 eta = [x - y for x, y in zip(log_q, Ax)]
     
@@ -88,6 +95,7 @@ def likelihood_prior_prod(x, q, mean, covariance, Gamma):
 # Task 4 
 
 N = 5000  # number of desired samples in the chain
+
 x0 = np.ones(n)  # starting point
 
 def dens(x):
@@ -95,7 +103,11 @@ def dens(x):
     return likelihood_prior_prod(x, q, m_0, Sigma_0, Gamma)
 
 
-prop_var = 0.25**2  # variance of proposal #TODO
+prop_var = 0.06**2  # variance of proposal 
+prop_var = 0.15**2  # variance of proposal 
+#prop_var = 0.2**2  # variance of proposal 
+prop_var = 3^2
+
 
 def proposal():
     return rnd.multivariate_normal(mean=np.zeros(n), cov=prop_var*np.eye(n))
@@ -106,7 +118,8 @@ samples[0, :] = x0  # first element in the chain is x0
 x = x0  # initialization
 dens_x = dens(x)
 accptd = 0  # number of accepted proposals
-    
+
+rates = []
 
 for j in range(1, N):
     eps = proposal()
@@ -126,21 +139,83 @@ for j in range(1, N):
     if j % 100 == 0:
         # Print acceptance rate every 100th step
         print("Acceptance rate: %f" % (accptd/j))
+        rates.append(accptd/j)
 
     np.savetxt('samples.txt', samples)
     
 
-# Estimate mean and covariance matrix of the samples
+# Task 5: Estimate mean and covariance matrix of the samples
 
-print(np.cov(samples.T))
-print([np.mean(samples.T[0,:]), np.mean(samples.T[1,:])])
+Sigma_hat = np.cov(samples[int(len(samples)*0.1):, ].T) # cut of burn in period 10%
+m_hat = [np.mean(samples[int(len(samples)*0.1):, 0]), np.mean(samples[int(len(samples)*0.1):, 1])] # cut of burn in period 10%
+print(Sigma_hat)
+print(m_hat)
 
+# Difference between Sigma_hat and Sigma as well as m and m_hat
+print(abs(Sigma_hat-Sigma))
+print(abs(m_hat - m))
+
+# ave
 np.savetxt('samples.txt', samples)
 
 
-
 plt.figure()
-plt.plot(range(1, N+1), samples[:, 0])  # plot first component of all chain elements
-plt.plot(range(1, N+1), samples[:, 1])  # plot first component of all chain elements
+plt.plot(range(1, N+1), samples[:, 0], label = "a")  # plot first component of all chain elements
+plt.plot(range(1, N+1), samples[:, 1], label = "b")  # plot second component of all chain elements
+plt.legend()
+plt.xlabel("Steps")
 plt.tight_layout()
 plt.show()
+
+
+plt.figure()
+plt.plot(samples[:, 0], samples[:, 1])  # Plot convergence of distribution
+plt.tight_layout()
+
+
+# Task 6 
+
+import mplcursors
+
+cursor = mplcursors.cursor(hover=True)
+cursor.connect("add", lambda sel: sel.annotation.set_text(
+    f"Step: {sel.target.index} "))
+
+plt.show()
+
+import statsmodels.api as sm
+
+def effective_sample_size(samples, burn_in_length):
+    arr = samples[burn_in_length:]
+    n = len(arr)
+    acf = sm.tsa.acf(arr, nlags = n, fft = True)
+    sums = 0
+    for k in range(1, len(acf)):
+        sums = sums + (n-k)*acf[k]/n
+
+    return n/(1+2*sums)
+
+ess_a = []
+ess_b = []
+burn_ins = []
+# Test every 100th index as burn_in_length
+for possible_length in np.arange(0, len(samples), 100):
+    burn_ins.append(possible_length)
+    ess_a.append(effective_sample_size(samples[:, 0], possible_length))
+    ess_b.append(effective_sample_size(samples[:, 1], possible_length))
+
+
+# If plot shows not the same as in report, close IDE and run again
+plt.plot(burn_ins, ess_a, label = "ESS a")
+plt.plot(burn_ins, ess_b, label = "ESS b")
+plt.legend()
+plt.ylabel("ESS")
+plt.xlabel("Burn-in length")
+plt.show()
+
+plt.plot(burn_ins[1:], rates)
+plt.ylabel("Acceptance Rate")
+plt.xlabel("Step")
+plt.show()
+
+
